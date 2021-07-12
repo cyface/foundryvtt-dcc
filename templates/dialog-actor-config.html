@@ -29,7 +29,12 @@
       <input type="checkbox" name="data.config.rollAttackBonus" id="data.config.rollAttackBonus" {{checked data.config.rollAttackBonus}} data-dtype="boolean"/>
     </div>
     <label class="info span">{{localize "DCC.RollAttackBonusInfo"}}</label>
-  </div>
+    <label for="data.config.rollABWithAttack">{{localize "DCC.RollABWithAttackConfig"}}</label>
+    <div class="form-fields">
+      <input type="checkbox" name="data.config.rollABWithAttack" id="data.config.rollABWithAttack" {{checked data.config.rollABWithAttack}} data-dtype="boolean"/>
+    </div>
+
+  </div>  
   <div class="form-group">
     <label for="data.config.computeAC">{{localize "DCC.ComputeACConfig"}}</label>
     <div class="form-fields">

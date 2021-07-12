@@ -112,6 +112,7 @@ class DCCActor extends Actor {
       capLevel: false,
       maxLevel: 0,
       rollAttackBonus: false,
+      rollABWithAttack: false,
       computeAC: false,
       baseACAbility: 'agl',
       sortInventory: true,
@@ -380,16 +381,15 @@ class DCCActor extends Actor {
   /**
    * Roll Attack Bonus
    */
-  async rollAttackBonus (options) {
+  async rollAttackBonus (options={}) {
     /* Determine attack bonus */
     const attackBonusExpression = this.data.data.details.attackBonus || '0'
-
     if (attackBonusExpression) {
       const abRoll = new Roll(attackBonusExpression, { critical: 3 })
 
       // Store the result for use in attack and damage rolls
       const lastRoll = this.data.data.details.lastRolledAttackBonus = (await abRoll.evaluate({ async: true })).total
-      this.update({
+      await this.update({
         'data.details.lastRolledAttackBonus': lastRoll
       })
 
@@ -400,13 +400,22 @@ class DCCActor extends Actor {
           upperThreshold: 3
         }
       }
-
+      
       // Convert the roll to a chat message
-      abRoll.toMessage({
-        speaker: ChatMessage.getSpeaker({ actor: this }),
-        flavor: game.i18n.localize('DCC.DeedRoll')
-      })
+      if (options.displayStandardCards || !options.rollWeaponAttack) {
+        abRoll.toMessage({
+          speaker: ChatMessage.getSpeaker({ actor: this }),
+          flavor: game.i18n.localize('DCC.DeedRoll')
+        })
+      }
+      return {
+        rolled: true,
+        roll: abRoll,
+        formula: game.dcc.DCCRoll.cleanFormula(abRoll.terms),
+        attackBonus: lastRoll,
+      };
     }
+
   }
 
   /*
@@ -429,6 +438,8 @@ class DCCActor extends Actor {
         options.displayStandardCards = game.settings.get('dcc', 'useStandardDiceRoller')
       } catch (e) { }
     }
+    const config = this._getConfig()
+
     // First try and find the item by name or id
     let weapon = this.items.find(i => i.name === weaponId || i.id === weaponId)
 
@@ -454,6 +465,12 @@ class DCCActor extends Actor {
     // If all lookups fail, give up and show a warning
     if (!weapon) {
       return ui.notifications.warn(game.i18n.format('DCC.WeaponNotFound', { id: weaponId }))
+    }
+
+    let attackBonusRollResult = 0;
+    if (config.rollAttackBonus && config.rollABWithAttack) {
+      options.rollWeaponAttack = true;
+      attackBonusRollResult = await this.rollAttackBonus(options)
     }
 
     // Attack roll
@@ -516,6 +533,7 @@ class DCCActor extends Actor {
     } else {
       const attackRollHTML = this._formatAttackRoll(attackRollResult)
       const damageRollHTML = this._formatDamageRoll(damageRollResult)
+      const attackBonusRollHTML = this._formatAttackBonusRoll(attackBonusRollResult)
 
       // Check for crits or fumbles
       let critResult = ''
@@ -527,7 +545,11 @@ class DCCActor extends Actor {
         fumbleResult = await this.rollFumble(options)
       }
 
-      const emote = options.backstab ? 'DCC.BackstabEmote' : 'DCC.AttackRollEmote'
+      let emote = options.backstab ? 'DCC.BackstabEmote' : 'DCC.AttackRollEmote'
+      if (config.rollAttackBonus && config.rollABWithAttack) {
+        emote = emote.concat("Deed");
+      }
+
       const messageData = {
         user: game.user.id,
         speaker: speaker,
@@ -536,6 +558,7 @@ class DCCActor extends Actor {
           weaponName: weapon.name,
           rollHTML: attackRollHTML,
           damageRollHTML: damageRollHTML,
+          attackBonus: attackBonusRollHTML,
           crit: critResult,
           fumble: fumbleResult
         }),
@@ -800,6 +823,25 @@ class DCCActor extends Actor {
       return game.i18n.format('DCC.DamageRollInvalidFormulaInline', { formula: rollResult.formula })
     }
   }
+
+  /**
+   * Format a Attack Bonus Roll roll for display in-line
+   * @param {Object} rollResult   The roll result object for the roll
+   * @return {string}             Formatted HTML containing roll
+   */
+   _formatAttackBonusRoll (rollResult) {
+    if (rollResult.rolled) {
+      const rollData = escape(JSON.stringify(rollResult.roll))
+      // Check for Crit/Fumble
+      let critFailClass = ''
+      if (Number(rollResult.attackBonus) >= 3) { 
+        critFailClass = 'critical ' 
+      }
+      return `<a class="${critFailClass} inline-roll inline-result" data-roll="${rollData}" title="${rollResult.formula}"><i class="fas fa-dice-d20"></i> ${rollResult.attackBonus}</a>`
+    } else {
+      return game.i18n.format('DCC.AttackBonusRollInvalidFormulaInline', { formula: rollResult.formula })
+    }
+  }  
 
   /**
    * Apply damage to this actor
